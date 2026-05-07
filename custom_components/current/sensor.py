@@ -55,12 +55,12 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
         name="Charger Status",
         icon="mdi:ev-station",
         value_fn=lambda data: (
-            "charging"
+            "Charging"
             if data.get("ongoing")
             else (
-                "available"
+                "Available"
                 if (data.get("chargers") or [{}])[0].get("IsPointActive")
-                else "unavailable"
+                else "Unavailable"
             )
         ),
     ),
