@@ -1,0 +1,12 @@
+{
+  "domain": "current",
+  "name": "CURRENT EV Charging",
+  "version": "0.1.0",
+  "documentation": "https://github.com/aunefyren/current",
+  "issue_tracker": "https://github.com/aunefyren/current/issues",
+  "dependencies": [],
+  "codeowners": ["@aunefyren"],
+  "requirements": [],
+  "iot_class": "cloud_polling",
+  "config_flow": true
+}

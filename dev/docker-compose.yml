@@ -1,0 +1,12 @@
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: ha-current-dev
+    ports:
+      - "8123:8123"
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+      - ../custom_components/current:/config/custom_components/current
+    environment:
+      - TZ=Europe/Oslo

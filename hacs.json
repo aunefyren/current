@@ -1,0 +1,7 @@
+{
+    "name": "CURRENT",
+    "content_in_root": false,
+    "country": ["NO"],
+    "render_readme": true,
+    "icon": "icon.jpg"
+  }
