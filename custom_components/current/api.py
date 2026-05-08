@@ -146,6 +146,21 @@ class CurrentApiClient:
         )
         return data.get("Result", data) if isinstance(data, dict) else data
 
+    async def set_authentication(self, box_id: int, enabled: bool) -> dict:
+        return await self._request_with_refresh(
+            "GET", f"Commands/SetDefaultAuthentication/{box_id}/{str(enabled).lower()}"
+        )
+
+    async def set_cable_lock(self, charge_point_id: int, enabled: bool) -> dict:
+        return await self._request_with_refresh(
+            "GET", f"Commands/SetDefaultPermanentCableLocking/{charge_point_id}/{str(enabled).lower()}"
+        )
+
+    async def restart_charger(self, box_id: int) -> dict:
+        return await self._request_with_refresh(
+            "GET", f"Commands/Reset/{box_id}/1"
+        )
+
     @property
     def access_token(self) -> str:
         return self._access_token

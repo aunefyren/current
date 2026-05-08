@@ -23,7 +23,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: CurrentCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([CurrentChargingSwitch(coordinator, entry)])
+    async_add_entities([
+        CurrentChargingSwitch(coordinator, entry),
+        CurrentAuthSwitch(coordinator, entry),
+        CurrentCableLockSwitch(coordinator, entry),
+    ])
 
 
 class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
@@ -92,3 +96,75 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
         if self._pending_state is not None:
             self._pending_state = None
             self.async_write_ha_state()
+
+
+class CurrentAuthSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Require Authentication"
+    _attr_icon = "mdi:shield-key"
+
+    def __init__(self, coordinator: CurrentCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"current_{entry.data[CONF_CUSTOMER_ID]}_auth"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, str(entry.data[CONF_CUSTOMER_ID]))},
+            name="CURRENT EV Charger",
+            manufacturer="CURRENT",
+        )
+
+    @property
+    def is_on(self) -> bool:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        return bool(chargers and chargers[0].get("IsAuthenticationEnabled"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        if chargers:
+            await self.coordinator.client.set_authentication(
+                chargers[0]["FK_ChargingBoxID"], True
+            )
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        if chargers:
+            await self.coordinator.client.set_authentication(
+                chargers[0]["FK_ChargingBoxID"], False
+            )
+            await self.coordinator.async_request_refresh()
+
+
+class CurrentCableLockSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Cable Lock"
+    _attr_icon = "mdi:lock"
+
+    def __init__(self, coordinator: CurrentCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"current_{entry.data[CONF_CUSTOMER_ID]}_cable_lock"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, str(entry.data[CONF_CUSTOMER_ID]))},
+            name="CURRENT EV Charger",
+            manufacturer="CURRENT",
+        )
+
+    @property
+    def is_on(self) -> bool:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        return bool(chargers and chargers[0].get("isPermanentCableLockingEnabled"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        if chargers:
+            await self.coordinator.client.set_cable_lock(
+                chargers[0]["FK_ChargePointID"], True
+            )
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        chargers = (self.coordinator.data or {}).get("chargers") or []
+        if chargers:
+            await self.coordinator.client.set_cable_lock(
+                chargers[0]["FK_ChargePointID"], False
+            )
+            await self.coordinator.async_request_refresh()
