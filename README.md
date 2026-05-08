@@ -1,4 +1,4 @@
-# CURRENT EV Charging — Home Assistant Integration
+# CURRENT EV Charging
 
 ![GitHub Release](https://img.shields.io/github/v/release/aunefyren/current?style=for-the-badge)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/aunefyren/current/total?style=for-the-badge)
@@ -22,22 +22,37 @@ Must be added as a custom repository.
 
 - UI-based setup — no `configuration.yaml` editing required
 - Start and stop charging via a switch entity
-- Live session monitoring (energy delivered, charging duration)
-- Last session summary (total energy and cost)
-- Charger status sensor (`available` / `charging` / `unavailable`)
+- Live session monitoring (power, current, energy, charging duration)
+- Charger status: `Available`, `Charging`, `Standby` (car full/paused), `Unavailable`
+- Last session summary (energy and cost in account currency)
+- Charger controls: require authentication, permanent cable lock, restart
+- Multiple chargers supported — each appears as a separate device
 
 <br>
 
 ## Entities
 
+Each charger appears as its own device. The following entities are created per charger:
+
+### Sensors
+| Entity | Description |
+|---|---|
+| Charger Status | `Available`, `Charging`, `Standby`, or `Unavailable` |
+| Session Energy | kWh delivered in the current session |
+| Charging Duration | Minutes of active power delivery this session |
+| Live Power | Current power draw in kW |
+| Live Current | Current draw in amps |
+| State of Charge | Battery % (if reported by the car over OCPP) |
+| Last Session Energy | kWh delivered in the last completed session |
+| Last Session Cost | Cost of the last completed session (account currency) |
+
+### Controls
 | Entity | Type | Description |
 |---|---|---|
 | EV Charging | Switch | Start/stop the charging session |
-| Charger Status | Sensor | `available`, `charging`, or `unavailable` |
-| Session Energy | Sensor | kWh delivered in the current session |
-| Charging Duration | Sensor | Minutes of active power delivery this session |
-| Last Session Energy | Sensor | kWh delivered in the last completed session |
-| Last Session Cost | Sensor | Cost of the last completed session (NOK) |
+| Require Authentication | Switch | Toggle RFID/app authentication requirement |
+| Cable Lock | Switch | Toggle permanent cable locking |
+| Restart Charger | Button | Send a reset command to the charger |
 
 <br>
 
@@ -53,14 +68,13 @@ Must be added as a custom repository.
 
 ## Known limitations
 
-- The CURRENT API caches session data and typically updates once per minute, so sensor values may lag up to ~60 seconds after charging starts or stops.
+- The CURRENT API caches session data server-side and typically updates once per minute, so sensor values may lag up to ~60 seconds after charging starts or stops.
 - This integration uses the same API endpoints as the CURRENT mobile app. These are not officially documented as a third-party API and may change without notice.
-- Only the first linked charger is used. Multiple chargers are not currently supported.
+- Chargers added to your CURRENT account after the integration is set up will not appear automatically — reload the integration from Settings → Integrations to pick them up.
 
 <br>
 
 ## Ideas for further development
 
-- Support for multiple chargers
-- Currency unit from account preferences (currently hardcoded to NOK)
+- Automatic re-registration when charger list changes (no reload required)
 - Charging schedule / smart charging controls

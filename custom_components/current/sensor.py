@@ -22,7 +22,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_CUSTOMER_ID, DOMAIN
+from .const import DOMAIN
 from .coordinator import CurrentCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ def _get_history_sessions(data: dict) -> list:
 @dataclass(frozen=True, kw_only=True)
 class CurrentSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
+    unit_fn: Callable[[dict[str, Any]], str | None] | None = None
 
 
 SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
@@ -121,9 +122,9 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
         key="last_session_cost",
         name="Last Session Cost",
         icon="mdi:cash",
-        native_unit_of_measurement="NOK",
         state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (_get_history_sessions(data) or [{}])[0].get("TotalPrice"),
+        unit_fn=lambda data: (data.get("chargers") or [{}])[0].get("Currency"),
     ),
     CurrentSensorEntityDescription(
         key="last_session_energy",
@@ -142,8 +143,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: CurrentCoordinator = hass.data[DOMAIN][entry.entry_id]
+    chargers = coordinator.data.get("chargers") or []
     async_add_entities(
-        CurrentSensor(coordinator, entry, description)
+        CurrentSensor(coordinator, description, charger)
+        for charger in chargers
         for description in SENSOR_DESCRIPTIONS
     )
 
@@ -155,20 +158,52 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
     def __init__(
         self,
         coordinator: CurrentCoordinator,
-        entry: ConfigEntry,
         description: CurrentSensorEntityDescription,
+        charger: dict,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = (
-            f"current_{entry.data[CONF_CUSTOMER_ID]}_{description.key}"
-        )
+        self._charge_point_id: int = charger["FK_ChargePointID"]
+        self._attr_unique_id = f"current_{self._charge_point_id}_{description.key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(entry.data[CONF_CUSTOMER_ID]))},
-            name="CURRENT EV Charger",
+            identifiers={(DOMAIN, str(self._charge_point_id))},
+            name=charger.get("Name", "CURRENT EV Charger"),
             manufacturer="CURRENT",
         )
 
+    def _filtered_data(self) -> dict:
+        data = self.coordinator.data or {}
+        cp_id = self._charge_point_id
+        return {
+            "chargers": [
+                c for c in data.get("chargers") or []
+                if c["FK_ChargePointID"] == cp_id
+            ],
+            "ongoing": [
+                s for s in data.get("ongoing") or []
+                if s.get("ChargingPointID") == cp_id
+            ],
+            "history": {
+                "List": [
+                    h for h in (data.get("history") or {}).get("List") or []
+                    if h.get("ChargePointID") == cp_id
+                ]
+            },
+        }
+
+    @property
+    def available(self) -> bool:
+        return super().available and any(
+            c["FK_ChargePointID"] == self._charge_point_id
+            for c in (self.coordinator.data or {}).get("chargers") or []
+        )
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        if self.entity_description.unit_fn is not None:
+            return self.entity_description.unit_fn(self._filtered_data())
+        return self.entity_description.native_unit_of_measurement
+
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self.coordinator.data or {})
+        return self.entity_description.value_fn(self._filtered_data())
