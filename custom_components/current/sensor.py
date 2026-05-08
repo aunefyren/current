@@ -10,7 +10,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -80,6 +86,36 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         icon="mdi:timer",
         value_fn=_get_session_duration,
+    ),
+    CurrentSensorEntityDescription(
+        key="live_power",
+        name="Live Power",
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data["ongoing"][0].get("LivekW") if data.get("ongoing") else None
+        ),
+    ),
+    CurrentSensorEntityDescription(
+        key="live_current",
+        name="Live Current",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data["ongoing"][0].get("Amps_Export") if data.get("ongoing") else None
+        ),
+    ),
+    CurrentSensorEntityDescription(
+        key="state_of_charge",
+        name="State of Charge",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: (
+            data["ongoing"][0].get("Last_SoC") or None if data.get("ongoing") else None
+        ),
     ),
     CurrentSensorEntityDescription(
         key="last_session_cost",
