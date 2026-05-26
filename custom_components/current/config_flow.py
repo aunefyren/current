@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -73,5 +74,57 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            try:
+                session = aiohttp_client.async_get_clientsession(self.hass)
+                login_data = await CurrentApiClient.login(
+                    session, reauth_entry.data[CONF_EMAIL], user_input[CONF_PASSWORD]
+                )
+            except AuthError:
+                errors["base"] = "invalid_auth"
+            except CannotConnectError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during CURRENT reauth")
+                errors["base"] = "unknown"
+            else:
+                try:
+                    access_token = login_data["accessToken"]
+                    refresh_token = login_data["rToken"]
+                except KeyError:
+                    _LOGGER.error(
+                        "Unexpected login response during reauth. Got keys: %s",
+                        list(login_data.keys()) if isinstance(login_data, dict) else login_data,
+                    )
+                    errors["base"] = "unknown"
+                else:
+                    self.hass.config_entries.async_update_entry(
+                        reauth_entry,
+                        data={
+                            **reauth_entry.data,
+                            CONF_ACCESS_TOKEN: access_token,
+                            CONF_REFRESH_TOKEN: refresh_token,
+                        },
+                    )
+                    return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={"email": reauth_entry.data[CONF_EMAIL]},
             errors=errors,
         )
