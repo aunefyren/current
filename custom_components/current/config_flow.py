@@ -120,6 +120,7 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_REFRESH_TOKEN: refresh_token,
                         },
                     )
+                    await self.hass.config_entries.async_reload(reauth_entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
