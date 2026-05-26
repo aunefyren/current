@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import aiohttp
@@ -24,12 +25,14 @@ class CurrentApiClient:
         refresh_token: str,
         customer_id: int,
         user_id: int,
+        on_token_refresh: Callable[[str], None] | None = None,
     ) -> None:
         self._session = session
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._customer_id = customer_id
         self._user_id = user_id
+        self._on_token_refresh = on_token_refresh
 
     @staticmethod
     async def login(
@@ -75,6 +78,8 @@ class CurrentApiClient:
                 if not isinstance(new_token, str):
                     raise AuthError(f"Unexpected refresh response: {data}")
                 self._access_token = new_token
+                if self._on_token_refresh is not None:
+                    self._on_token_refresh(new_token)
         except aiohttp.ClientError as err:
             raise CannotConnectError(f"Connection error during refresh: {err}") from err
 
@@ -83,7 +88,7 @@ class CurrentApiClient:
         headers = {"Authorization": f"Bearer {self._access_token}"}
         try:
             async with self._session.request(method, url, headers=headers, **kwargs) as resp:
-                if resp.status == 401:
+                if resp.status in (401, 403):
                     raise AuthError("Unauthorized")
                 if not resp.ok:
                     raise CannotConnectError(f"Request to {path} failed: {resp.status}")

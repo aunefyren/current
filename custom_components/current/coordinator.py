@@ -4,9 +4,10 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import CannotConnectError, CurrentApiClient
+from .api import AuthError, CannotConnectError, CurrentApiClient
 from .const import DOMAIN, SCAN_INTERVAL_ACTIVE, SCAN_INTERVAL_IDLE
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ongoing = await self.client.get_ongoing_session()
             chargers = await self.client.get_chargers()
             history = await self.client.get_history()
+        except AuthError as err:
+            raise ConfigEntryAuthFailed(f"CURRENT authentication failed: {err}") from err
         except CannotConnectError as err:
             raise UpdateFailed(f"Error communicating with CURRENT API: {err}") from err
 
