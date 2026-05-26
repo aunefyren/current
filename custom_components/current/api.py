@@ -102,7 +102,12 @@ class CurrentApiClient:
         except AuthError:
             _LOGGER.debug("Access token expired, refreshing")
             await self._refresh_access_token()
-            return await self._request(method, path, **kwargs)
+            try:
+                return await self._request(method, path, **kwargs)
+            except AuthError as err:
+                # Refresh succeeded but request was still rejected — not an auth
+                # problem (e.g. endpoint returns 403 for non-auth reasons).
+                raise CannotConnectError(f"Request failed after token refresh: {err}") from err
 
     async def get_chargers(self) -> list[dict]:
         data = await self._request_with_refresh(
