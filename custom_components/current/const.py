@@ -1,5 +1,7 @@
 DOMAIN = "current"
 API_BASE_URL = "https://api.current.eco"
+APP_ORIGIN = "https://app.current.eco"
+APP_VERSION = "2.28.0"
 APP_ID = "2233ae1c-9c6e-499b-aeab-877179a939b1"
 SCAN_INTERVAL_ACTIVE = 30  # seconds — used when a session is ongoing
 SCAN_INTERVAL_IDLE = 60    # seconds — used when no session is active

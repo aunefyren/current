@@ -105,6 +105,9 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
                 try:
                     access_token = login_data["accessToken"]
                     refresh_token = login_data["rToken"]
+                    customer = login_data["customer"]
+                    customer_id = customer["PK_CustomerID"]
+                    user_id = customer["FK_UserID"]
                 except KeyError:
                     _LOGGER.error(
                         "Unexpected login response during reauth. Got keys: %s",
@@ -118,6 +121,8 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
                             **reauth_entry.data,
                             CONF_ACCESS_TOKEN: access_token,
                             CONF_REFRESH_TOKEN: refresh_token,
+                            CONF_CUSTOMER_ID: customer_id,
+                            CONF_USER_ID: user_id,
                         },
                     )
                     await self.hass.config_entries.async_reload(reauth_entry.entry_id)

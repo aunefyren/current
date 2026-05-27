@@ -4,7 +4,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import API_BASE_URL, APP_ID
+from .const import API_BASE_URL, APP_ID, APP_ORIGIN, APP_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,8 +68,9 @@ class CurrentApiClient:
             "pushToken": None,
             "TimeZone": "UTC",
         }
+        refresh_headers = {"Origin": APP_ORIGIN, "X-App-Version": APP_VERSION}
         try:
-            async with self._session.post(url, json=body) as resp:
+            async with self._session.post(url, json=body, headers=refresh_headers) as resp:
                 if not resp.ok:
                     raise AuthError("Token refresh failed")
                 data = await resp.json()
@@ -85,7 +86,11 @@ class CurrentApiClient:
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         url = f"{API_BASE_URL}/v2/{path}"
-        headers = {"Authorization": f"Bearer {self._access_token}"}
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Origin": APP_ORIGIN,
+            "X-App-Version": APP_VERSION,
+        }
         try:
             async with self._session.request(method, url, headers=headers, **kwargs) as resp:
                 if resp.status in (401, 403):
@@ -120,7 +125,6 @@ class CurrentApiClient:
         data = await self._request_with_refresh(
             "GET", f"sessions/user/{self._user_id}/active"
         )
-        # Response: {"Result": [...]}
         result = data.get("Result")
         if isinstance(result, list):
             return result
