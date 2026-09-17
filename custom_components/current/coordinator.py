@@ -1,5 +1,6 @@
 """Data update coordinator for CURRENT."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable
@@ -13,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import AuthError, CannotConnectError, CurrentApiClient
 from .const import DOMAIN, SCAN_INTERVAL_ACTIVE, SCAN_INTERVAL_IDLE
+from .statistics_import import async_fetch_all_sessions, async_import_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +39,10 @@ class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self._fast_poll_until: float = 0
+        self._statistics_lock = asyncio.Lock()
+        # What the latest history looked like when statistics were last
+        # imported, so the full history is only read again when it changes.
+        self._imported_history: tuple | None = None
 
     def start_fast_polling(self, duration: int = 120) -> None:
         """Poll faster for a while, so a start or stop shows up quickly."""
@@ -80,8 +86,57 @@ class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seconds=SCAN_INTERVAL_ACTIVE if ongoing else SCAN_INTERVAL_IDLE
             )
 
+        self._schedule_statistics(history, chargers)
+
         return {
             "ongoing": ongoing,
             "chargers": chargers,
             "history": history,
         }
+
+    def _schedule_statistics(self, history: dict, chargers: list[dict]) -> None:
+        """Import statistics in the background when the history has changed.
+
+        Every poll fetches the latest few sessions. Reading the whole history
+        takes several requests, so that only happens at startup and when one
+        of those sessions is new or has been revised.
+        """
+        fingerprint = tuple(
+            (
+                (item.get("Session") or {}).get("PK_ServiceSessionID"),
+                (item.get("Session") or {}).get("SessionEnd"),
+                item.get("TotalkWH"),
+                item.get("TotalPrice"),
+            )
+            for item in (history or {}).get("List") or []
+        )
+        if fingerprint == self._imported_history:
+            return
+        if self._statistics_lock.locked():
+            _LOGGER.debug("Statistics import still running, skipping this cycle")
+            return
+
+        charger_names = {
+            c["FK_ChargePointID"]: c["Name"]
+            for c in chargers
+            if c.get("FK_ChargePointID") is not None and c.get("Name")
+        }
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._async_import_statistics(fingerprint, charger_names),
+            name=f"{DOMAIN}_statistics",
+        )
+
+    async def _async_import_statistics(
+        self, fingerprint: tuple, charger_names: dict[int, str]
+    ) -> None:
+        """Read the whole charging history and write it to statistics."""
+        async with self._statistics_lock:
+            try:
+                sessions = await async_fetch_all_sessions(self.client)
+            except (AuthError, CannotConnectError) as err:
+                # The regular poll reports these; try again on the next one.
+                _LOGGER.warning("Could not read charging history: %s", err)
+                return
+            async_import_statistics(self.hass, sessions, charger_names)
+            self._imported_history = fingerprint

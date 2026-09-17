@@ -383,6 +383,23 @@ def main() -> int:
         token=access_token,
         params={**history_params, "number": 20},
     )
+    # The statistics import pages through the whole history. startIndex should
+    # skip that many sessions, so this page should repeat sessions 6-10 of
+    # history.20; and a large page shows whether CURRENT caps its size.
+    call(
+        "history.page2",
+        "GET",
+        f"ChargingHistory/customers/{customer_id}",
+        token=access_token,
+        params={**history_params, "startIndex": 5},
+    )
+    call(
+        "history.100",
+        "GET",
+        f"ChargingHistory/customers/{customer_id}",
+        token=access_token,
+        params={**history_params, "number": 100},
+    )
 
     # What a rejected token looks like: 401 or 403, and with what body. This
     # decides when the client refreshes versus gives up.
