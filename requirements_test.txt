@@ -1,0 +1,5 @@
+# Test and lint tooling. pytest-homeassistant-custom-component pulls in
+# Home Assistant itself along with the pytest plugins it needs, and tracks
+# Home Assistant releases -- bump it when targeting a newer HA.
+pytest-homeassistant-custom-component
+ruff

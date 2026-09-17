@@ -153,3 +153,7 @@ cython_debug/
 
 /dev/config/*
 CLAUDE.md
+
+# API probe dumps (dev/probe_api.py); the raw one holds credentials
+current-probe-*.json
+.ruff_cache/
