@@ -199,3 +199,96 @@ async def test_reauth_rejects_wrong_password(
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
     assert dict(mock_config_entry.data) == before
+
+
+@pytest.mark.parametrize(
+    ("break_login", "error"),
+    [
+        (lambda api: setattr(api, "login_status", 500), "cannot_connect"),
+        (lambda api: setattr(api, "connection_error", True), "cannot_connect"),
+        (
+            lambda api: setattr(
+                api, "login_body", {"Result": {"accessToken": MOCK_ACCESS_TOKEN}}
+            ),
+            "unknown",
+        ),
+    ],
+    ids=["server_error", "connection_error", "unexpected_response"],
+)
+async def test_reauth_error_then_recovers(
+    hass: HomeAssistant,
+    patched_session: FakeSession,
+    api: CurrentApiMock,
+    api_responses: dict,
+    mock_config_entry: MockConfigEntry,
+    break_login,
+    error: str,
+) -> None:
+    """A failed attempt keeps the form open, the entry untouched, and can retry."""
+    mock_config_entry.add_to_hass(hass)
+    before = dict(mock_config_entry.data)
+    break_login(api)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: MOCK_PASSWORD}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == {"base": error}
+    assert dict(mock_config_entry.data) == before
+
+    api.login_status = 200
+    api.connection_error = False
+    api.login_body = api_responses["login"]
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: MOCK_PASSWORD}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+
+
+async def test_reauth_unexpected_exception(
+    hass: HomeAssistant,
+    patched_session: FakeSession,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Anything else is caught and reported, not raised into the UI."""
+    mock_config_entry.add_to_hass(hass)
+    before = dict(mock_config_entry.data)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    with patch(
+        "custom_components.current.config_flow.CurrentApiClient.login",
+        side_effect=ValueError("boom"),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSWORD: MOCK_PASSWORD}
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+    assert dict(mock_config_entry.data) == before
+
+
+async def test_reauth_reloads_the_entry(
+    hass: HomeAssistant,
+    patched_session: FakeSession,
+    mock_config_entry: MockConfigEntry,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """Successful re-authentication sets the entry up again with the new tokens."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: MOCK_PASSWORD}
+    )
+    await hass.async_block_till_done()
+
+    mock_setup_entry.assert_called_once()
+    (_, entry), _ = mock_setup_entry.call_args
+    assert entry.entry_id == mock_config_entry.entry_id
