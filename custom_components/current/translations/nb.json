@@ -1,0 +1,82 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CURRENT elbillading",
+        "description": "Skriv inn e-post og passord for CURRENT-kontoen din.",
+        "data": {
+          "email": "E-post",
+          "password": "Passord"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Logg inn på CURRENT på nytt",
+        "description": "Skriv inn passordet for {email} på nytt for å gjenopprette tilkoblingen.",
+        "data": {
+          "password": "Passord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Feil e-post eller passord.",
+      "cannot_connect": "Kunne ikke koble til CURRENT.",
+      "unknown": "Det oppstod en uventet feil."
+    },
+    "abort": {
+      "already_configured": "Denne kontoen er allerede satt opp.",
+      "reauth_successful": "Du er logget inn på nytt."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Laderstatus"
+      },
+      "session_energy": {
+        "name": "Energi denne økten"
+      },
+      "session_duration": {
+        "name": "Ladetid"
+      },
+      "live_power": {
+        "name": "Effekt nå"
+      },
+      "live_current": {
+        "name": "Strøm nå"
+      },
+      "state_of_charge": {
+        "name": "Batterinivå"
+      },
+      "last_session_cost": {
+        "name": "Kostnad forrige økt"
+      },
+      "last_session_energy": {
+        "name": "Energi forrige økt"
+      }
+    },
+    "switch": {
+      "charging": {
+        "name": "Lading"
+      },
+      "require_authentication": {
+        "name": "Krev autentisering"
+      },
+      "cable_lock": {
+        "name": "Kabellås"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Start laderen på nytt"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Kunne ikke sende kommandoen til CURRENT: {error}"
+    },
+    "command_auth_failed": {
+      "message": "CURRENT avviste kommandoen fordi innloggingen har utløpt. Logg inn på nytt for å fortsette."
+    }
+  }
+}

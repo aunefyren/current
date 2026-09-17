@@ -46,10 +46,25 @@ def _get_session_duration(data: dict) -> int | None:
 
 
 def _get_history_sessions(data: dict) -> list:
-    history = data.get("history") or {}
-    if isinstance(history, list):
-        return history
-    return history.get("List") or []
+    return (data.get("history") or {}).get("List") or []
+
+
+def _get_live(data: dict) -> dict:
+    """Return the charger's live readings.
+
+    CURRENT reports power and current on the charger, not the session: while
+    charging, the session's LivekW stays 0 and Amps_Export stays null.
+    """
+    charger = (data.get("chargers") or [{}])[0]
+    return (charger.get("ExtraInformation") or {}).get("GenericPoint") or {}
+
+
+def _get_status(data: dict) -> str:
+    if data.get("ongoing"):
+        return "Charging" if (_get_live(data).get("LivekW") or 0) > 0 else "Standby"
+    if (data.get("chargers") or [{}])[0].get("IsPointActive"):
+        return "Available"
+    return "Unavailable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -58,26 +73,23 @@ class CurrentSensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[dict[str, Any]], Any]
     unit_fn: Callable[[dict[str, Any]], str | None] | None = None
+    attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
     CurrentSensorEntityDescription(
         key="status",
-        name="Charger Status",
+        translation_key="status",
         icon="mdi:ev-station",
-        value_fn=lambda data: (
-            "Charging"
-            if data.get("ongoing") and (data["ongoing"][0].get("LivekW") or 0) > 0
-            else "Standby"
-            if data.get("ongoing")
-            else "Available"
-            if (data.get("chargers") or [{}])[0].get("IsPointActive")
-            else "Unavailable"
-        ),
+        value_fn=_get_status,
+        # CURRENT's own status, which has more states than the four above.
+        attributes_fn=lambda data: {
+            "current_status": _get_live(data).get("CurrentStatus"),
+        },
     ),
     CurrentSensorEntityDescription(
         key="session_energy",
-        name="Session Energy",
+        translation_key="session_energy",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -85,7 +97,7 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
     ),
     CurrentSensorEntityDescription(
         key="session_duration",
-        name="Charging Duration",
+        translation_key="session_duration",
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_unit_of_measurement=UnitOfTime.MINUTES,
         device_class=SensorDeviceClass.DURATION,
@@ -94,27 +106,27 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
     ),
     CurrentSensorEntityDescription(
         key="live_power",
-        name="Live Power",
+        translation_key="live_power",
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            data["ongoing"][0].get("LivekW") if data.get("ongoing") else None
-        ),
+        value_fn=lambda data: _get_live(data).get("LivekW"),
     ),
     CurrentSensorEntityDescription(
         key="live_current",
-        name="Live Current",
+        translation_key="live_current",
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            data["ongoing"][0].get("Amps_Export") if data.get("ongoing") else None
-        ),
+        value_fn=lambda data: _get_live(data).get("LiveAmps"),
+        attributes_fn=lambda data: {
+            f"current_{phase.lower()}": _get_live(data).get(f"LiveAmps_{phase}")
+            for phase in ("L1", "L2", "L3")
+        },
     ),
     CurrentSensorEntityDescription(
         key="state_of_charge",
-        name="State of Charge",
+        translation_key="state_of_charge",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -124,7 +136,7 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
     ),
     CurrentSensorEntityDescription(
         key="last_session_cost",
-        name="Last Session Cost",
+        translation_key="last_session_cost",
         icon="mdi:cash",
         state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (_get_history_sessions(data) or [{}])[0].get(
@@ -134,7 +146,7 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
     ),
     CurrentSensorEntityDescription(
         key="last_session_energy",
-        name="Last Session Energy",
+        translation_key="last_session_energy",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
@@ -221,3 +233,10 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
     def native_value(self) -> Any:
         """Return the value for this charger."""
         return self.entity_description.value_fn(self._filtered_data())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra detail for this charger, where the sensor has any."""
+        if self.entity_description.attributes_fn is None:
+            return None
+        return self.entity_description.attributes_fn(self._filtered_data())

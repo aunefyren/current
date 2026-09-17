@@ -129,6 +129,23 @@ async def test_get_history(session: FakeSession, api: CurrentApiMock) -> None:
     assert api.requests[0]["params"]["number"] == 5
 
 
+async def test_request_network_failure_is_connection_error(
+    session: FakeSession, api: CurrentApiMock
+) -> None:
+    """Network errors on a normal request surface as connection errors."""
+    api.connection_error = True
+    with pytest.raises(CannotConnectError):
+        await build(session).get_chargers()
+
+
+async def test_ongoing_session_unexpected_shape(
+    session: FakeSession, api_responses: dict
+) -> None:
+    """Anything other than a list of sessions is treated as none."""
+    api_responses["ongoing_idle"]["Result"] = None
+    assert await build(session).get_ongoing_session() == []
+
+
 # -- token refresh --------------------------------------------------------
 
 
@@ -165,6 +182,19 @@ async def test_refresh_rejected_is_auth_error(
 
     with pytest.raises(AuthError):
         await build(session).get_chargers()
+
+
+async def test_refresh_without_token_is_auth_error(
+    session: FakeSession, api: CurrentApiMock
+) -> None:
+    """A refresh answer with no token in it cannot be used to carry on."""
+    api.expire_token()
+    api.refresh_body = {"Result": {"success": False, "datas": None}}
+    refreshed: list[str] = []
+
+    with pytest.raises(AuthError):
+        await build(session, refreshed).get_chargers()
+    assert refreshed == []
 
 
 async def test_forbidden_after_refresh_is_not_auth_error(

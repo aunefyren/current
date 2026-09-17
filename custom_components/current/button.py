@@ -32,7 +32,7 @@ class CurrentRestartButton(CoordinatorEntity[CurrentCoordinator], ButtonEntity):
     """Restarts a charger."""
 
     _attr_has_entity_name = True
-    _attr_name = "Restart Charger"
+    _attr_translation_key = "restart"
     _attr_icon = "mdi:restart"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
@@ -57,4 +57,6 @@ class CurrentRestartButton(CoordinatorEntity[CurrentCoordinator], ButtonEntity):
     async def async_press(self) -> None:
         """Restart the charger."""
         _LOGGER.warning("Restarting charger box_id=%s", self._box_id)
-        await self.coordinator.client.restart_charger(self._box_id)
+        await self.coordinator.async_send_command(
+            self.coordinator.client.restart_charger(self._box_id)
+        )

@@ -1,11 +1,13 @@
 """Switches for CURRENT chargers."""
 
 import logging
+from collections.abc import Coroutine
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
@@ -51,7 +53,7 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
     """Starts and stops charging."""
 
     _attr_has_entity_name = True
-    _attr_name = "EV Charging"
+    _attr_translation_key = "charging"
     _attr_icon = "mdi:ev-station"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
@@ -97,12 +99,9 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start charging."""
-        self._pending_state = True
-        self.async_write_ha_state()
-        await self.coordinator.client.start_charging(self._charge_point_id)
-        self.coordinator.start_fast_polling(120)
-        async_call_later(self.hass, 5, self._async_refresh)
-        async_call_later(self.hass, _PENDING_TIMEOUT, self._async_clear_pending)
+        await self._async_send_and_expect(
+            True, self.coordinator.client.start_charging(self._charge_point_id)
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the active session, if there is one."""
@@ -110,11 +109,31 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
         if not session:
             _LOGGER.warning("No active session to stop")
             return
-        self._pending_state = False
-        self.async_write_ha_state()
-        await self.coordinator.client.stop_charging(
-            session["ChargingBoxID"], session["PK_ServiceSessionID"]
+        await self._async_send_and_expect(
+            False,
+            self.coordinator.client.stop_charging(
+                session["ChargingBoxID"], session["PK_ServiceSessionID"]
+            ),
         )
+
+    async def _async_send_and_expect(
+        self, state: bool, command: Coroutine[Any, Any, Any]
+    ) -> None:
+        """Show the requested state at once, then send the command.
+
+        CURRENT takes a few seconds to report a session starting or stopping,
+        so the switch holds the requested state until a poll confirms it or
+        the timeout passes. If the command itself fails, nothing is coming, so
+        the switch goes straight back to what the charger last reported.
+        """
+        self._pending_state = state
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.async_send_command(command)
+        except HomeAssistantError:
+            self._pending_state = None
+            self.async_write_ha_state()
+            raise
         self.coordinator.start_fast_polling(120)
         async_call_later(self.hass, 5, self._async_refresh)
         async_call_later(self.hass, _PENDING_TIMEOUT, self._async_clear_pending)
@@ -132,7 +151,7 @@ class CurrentAuthSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
     """Turns required authentication on or off."""
 
     _attr_has_entity_name = True
-    _attr_name = "Require Authentication"
+    _attr_translation_key = "require_authentication"
     _attr_icon = "mdi:shield-key"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
@@ -165,12 +184,16 @@ class CurrentAuthSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Require authentication."""
-        await self.coordinator.client.set_authentication(self._box_id, True)
+        await self.coordinator.async_send_command(
+            self.coordinator.client.set_authentication(self._box_id, True)
+        )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop requiring authentication."""
-        await self.coordinator.client.set_authentication(self._box_id, False)
+        await self.coordinator.async_send_command(
+            self.coordinator.client.set_authentication(self._box_id, False)
+        )
         await self.coordinator.async_request_refresh()
 
 
@@ -178,7 +201,7 @@ class CurrentCableLockSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity
     """Turns permanent cable locking on or off."""
 
     _attr_has_entity_name = True
-    _attr_name = "Cable Lock"
+    _attr_translation_key = "cable_lock"
     _attr_icon = "mdi:lock"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
@@ -210,10 +233,14 @@ class CurrentCableLockSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Lock the cable permanently."""
-        await self.coordinator.client.set_cable_lock(self._charge_point_id, True)
+        await self.coordinator.async_send_command(
+            self.coordinator.client.set_cable_lock(self._charge_point_id, True)
+        )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop locking the cable permanently."""
-        await self.coordinator.client.set_cable_lock(self._charge_point_id, False)
+        await self.coordinator.async_send_command(
+            self.coordinator.client.set_cable_lock(self._charge_point_id, False)
+        )
         await self.coordinator.async_request_refresh()

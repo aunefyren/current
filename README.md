@@ -37,11 +37,11 @@ Each charger appears as its own device. The following entities are created per c
 ### Sensors
 | Entity | Description |
 |---|---|
-| Charger Status | `Available`, `Charging`, `Standby`, or `Unavailable` |
+| Charger Status | `Available`, `Charging`, `Standby`, or `Unavailable`. CURRENT's own status is in the `current_status` attribute |
 | Session Energy | kWh delivered in the current session |
 | Charging Duration | Minutes of active power delivery this session |
-| Live Power | Current power draw in kW |
-| Live Current | Current draw in amps |
+| Live Power | Current power draw in kW (0 when idle) |
+| Live Current | Current draw in amps, with per-phase values as attributes (0 when idle) |
 | State of Charge | Battery % (if reported by the car over OCPP) |
 | Last Session Energy | kWh delivered in the last completed session |
 | Last Session Cost | Cost of the last completed session (account currency) |
@@ -71,6 +71,25 @@ Each charger appears as its own device. The following entities are created per c
 - The CURRENT API caches session data server-side and typically updates once per minute, so sensor values may lag up to ~60 seconds after charging starts or stops.
 - This integration uses the same API endpoints as the CURRENT mobile app. These are not officially documented as a third-party API and may change without notice.
 - Chargers added to your CURRENT account after the integration is set up will not appear automatically — reload the integration from Settings → Integrations to pick them up.
+
+<br>
+
+## Development
+
+Tests run against [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component) and need Python 3.13:
+
+```sh
+pip install -r requirements_test.txt
+pytest tests
+ruff check custom_components tests dev
+```
+
+The API is faked in `tests/conftest.py` using responses captured from a real account, stored in `tests/fixtures/api_responses.json`. To refresh them after CURRENT changes its API:
+
+1. `CURRENT_EMAIL=you@example.com python3 dev/probe_api.py` logs in, calls the read-only endpoints the integration uses, and writes `current-probe-raw.json` (private) and `current-probe-scrubbed.json` (identifiers redacted). It never sends charger commands. Logging in issues new tokens, so Home Assistant may ask you to re-authenticate afterwards.
+2. Check the scrubbed file for anything personal, then run `python3 dev/make_fixtures.py` to rebuild the fixtures with fake identifiers.
+
+The probe captures whichever state the charger is in, and the other state is derived from it: an idle capture gets a charging session built from the newest history session, and a charging capture gets an idle charger with its live readings zeroed. The notes at the top of the fixture file say which parts are derived.
 
 <br>
 

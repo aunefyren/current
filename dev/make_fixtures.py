@@ -67,17 +67,55 @@ FAKE_STRINGS = {
 
 PLACEHOLDER = re.compile(r"^<(\w+):(\d+)>$")
 
-# Fields the live sensors read from an ongoing session, with plausible values
-# for a car mid-charge. Used only when the probe caught no active session.
+# Session fields with plausible values for a car mid-charge. Used only when
+# the probe caught no active session.
 CHARGING_VALUES = {
     "SessionEnd": None,
     "StopReason": None,
-    "LivekW": 11.0,
-    "Amps_Export": 16.0,
     "TotalkWh": 12.5,
     "Duration": 4200,
     "DurationCharging": 4080,
 }
+
+# CURRENT reports live readings on the charger, not the session: while
+# charging, the session's LivekW stays 0 and Amps_Export null. These are the
+# charger's live fields as a probe of an idle charger showed them, and
+# plausible values for one mid-charge.
+LIVE_IDLE = {
+    "CurrentStatus": "Available",
+    "CurrentStatusPoint": "Available",
+    "State": "Online",
+    "LivekW": 0.0,
+    "LivekW_L1": 0.0,
+    "LivekW_L2": 0.0,
+    "LivekW_L3": 0.0,
+    "LiveAmps": 0.0,
+    "LiveAmps_L1": 0.0,
+    "LiveAmps_L2": 0.0,
+    "LiveAmps_L3": 0.0,
+    "LivekWH": 0.0,
+    "TotalkWHOfCurrentSession": 0.0,
+}
+LIVE_CHARGING = {
+    "CurrentStatus": "Charging",
+    "CurrentStatusPoint": "Charging",
+    "State": "Charging",
+    "LivekW": 11.0,
+    "LiveAmps": 16.0,
+    "LiveAmps_L1": 16.0,
+    "LiveAmps_L2": 16.0,
+    "LiveAmps_L3": 16.0,
+    "LivekWH": 11.0,
+    "TotalkWHOfCurrentSession": 12.5,
+}
+
+
+def with_live(chargers: dict, values: dict) -> dict:
+    """Return the chargers response with live fields replaced."""
+    chargers = copy.deepcopy(chargers)
+    for charger in chargers["Result"]["datas"]:
+        charger["ExtraInformation"]["GenericPoint"].update(values)
+    return chargers
 
 
 def fake_value(key: str, index: int, pinned: dict[int, int]):
@@ -173,13 +211,29 @@ def main() -> int:
         ),
     }
 
-    # Idle and charging variants of the active-session response.
+    # Idle and charging variants of the active-session and charger responses.
+    # The probe caught one state; the other is derived from it.
     sessions = fixtures.pop("ongoing")["Result"]
+    chargers = fixtures.pop("chargers")
     fixtures["ongoing_idle"] = {"Result": []}
     if sessions:
         fixtures["ongoing_charging"] = {"Result": sessions}
+        fixtures["chargers_charging"] = chargers
+        fixtures["chargers_idle"] = with_live(chargers, LIVE_IDLE)
         notes["ongoing_charging"] = "captured from a live session"
+        notes["chargers_charging"] = "captured while charging"
+        notes["chargers_idle"] = (
+            "derived from the charging capture; overridden live fields: "
+            + ", ".join(LIVE_IDLE)
+        )
     else:
+        fixtures["chargers_idle"] = chargers
+        fixtures["chargers_charging"] = with_live(chargers, LIVE_CHARGING)
+        notes["chargers_idle"] = "captured while idle"
+        notes["chargers_charging"] = (
+            "derived from the idle capture; overridden live fields: "
+            + ", ".join(LIVE_CHARGING)
+        )
         # No car was charging during the probe. History sessions share the
         # active-session shape, so the newest one stands in, with its live
         # fields set as if mid-charge. Re-probe while charging to replace it.

@@ -97,9 +97,15 @@ class CurrentApiMock:
         self.login_status = 200
         self.login_body: Any = responses["login"]
         self.refresh_status = 200
+        self.refresh_body: Any = responses["refresh"]
+        self.command_status: int | None = None  # fail charger commands only
         self.forbidden_paths: set[str] = set()
         self.charging = False
-        self.chargers: list[dict[str, Any]] = responses["chargers"]["Result"]["datas"]
+        # Live readings to change on the charging charger, e.g. {"LivekW": 0.0}.
+        self.live_overrides: dict[str, Any] = {}
+        self.chargers: list[dict[str, Any]] = responses["chargers_idle"]["Result"][
+            "datas"
+        ]
         self.history: dict[str, Any] = responses["history"]["Result"]
 
         # Tokens the server currently accepts.
@@ -113,6 +119,25 @@ class CurrentApiMock:
         if not self.charging:
             return self.responses["ongoing_idle"]["Result"]
         return self.responses["ongoing_charging"]["Result"]
+
+    def chargers_response(self) -> list[dict[str, Any]]:
+        """Return the chargers, with live readings on the one charging.
+
+        CURRENT reports power and current on the charger rather than the
+        session, so charging changes this response as well as the sessions.
+        """
+        chargers = copy.deepcopy(self.chargers)
+        if not self.charging:
+            return chargers
+        captured = self.responses["chargers_charging"]["Result"]["datas"][0]
+        live = {
+            **captured["ExtraInformation"]["GenericPoint"],
+            **self.live_overrides,
+        }
+        for charger in chargers:
+            if charger["FK_ChargePointID"] == MOCK_CHARGE_POINT_ID:
+                charger["ExtraInformation"]["GenericPoint"].update(live)
+        return chargers
 
     def expire_token(self) -> None:
         """Make the server reject the access token it issued at login."""
@@ -176,13 +201,15 @@ class CurrentApiMock:
 
         if method == "GET" and path == "ChargePoints/my-points":
             return FakeResponse(
-                200, {"Result": {"success": True, "datas": self.chargers}}
+                200, {"Result": {"success": True, "datas": self.chargers_response()}}
             )
         if method == "GET" and path == f"sessions/user/{MOCK_USER_ID}/active":
             return FakeResponse(200, {"Result": self.sessions})
         if method == "GET" and path == f"ChargingHistory/customers/{MOCK_CUSTOMER_ID}":
             return FakeResponse(200, {"Result": self.history})
         if path.startswith("Commands/"):
+            if self.command_status is not None:
+                return FakeResponse(self.command_status, {})
             return FakeResponse(200, {"Result": {"success": True}})
 
         return FakeResponse(404, {"title": f"unhandled {method} {path}"})
@@ -191,7 +218,7 @@ class CurrentApiMock:
         if self.refresh_status != 200 or body.get("rToken") != MOCK_REFRESH_TOKEN:
             return FakeResponse(self.refresh_status, {})
         self.valid_tokens.add(MOCK_REFRESHED_TOKEN)
-        return FakeResponse(200, self.responses["refresh"])
+        return FakeResponse(200, self.refresh_body)
 
 
 class FakeSession:

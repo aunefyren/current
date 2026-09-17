@@ -64,7 +64,7 @@ const = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(const)
 
 API = f"{const.API_BASE_URL}/v2"
-UA = "ha-current-probe/0.1 (+https://github.com/aunefyren/home-assistant-current)"
+UA = "ha-current-probe/0.1 (+https://github.com/aunefyren/current)"
 
 # The only POSTs the probe may make. Everything else must be a GET, and no GET
 # may touch Commands/.
