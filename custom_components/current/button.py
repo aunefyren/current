@@ -1,3 +1,5 @@
+"""Buttons for CURRENT chargers."""
+
 import logging
 
 from homeassistant.components.button import ButtonEntity
@@ -18,6 +20,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up a restart button for each charger."""
     coordinator: CurrentCoordinator = hass.data[DOMAIN][entry.entry_id]
     chargers = coordinator.data.get("chargers") or []
     async_add_entities(
@@ -26,11 +29,14 @@ async def async_setup_entry(
 
 
 class CurrentRestartButton(CoordinatorEntity[CurrentCoordinator], ButtonEntity):
+    """Restarts a charger."""
+
     _attr_has_entity_name = True
     _attr_name = "Restart Charger"
     _attr_icon = "mdi:restart"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
+        """Initialise the button for one charger."""
         super().__init__(coordinator)
         self._box_id: int = charger["FK_ChargingBoxID"]
         self._attr_unique_id = f"current_{charger['FK_ChargePointID']}_restart"
@@ -42,11 +48,13 @@ class CurrentRestartButton(CoordinatorEntity[CurrentCoordinator], ButtonEntity):
 
     @property
     def available(self) -> bool:
+        """Return whether the charger is still on the account."""
         return super().available and any(
             c["FK_ChargingBoxID"] == self._box_id
             for c in (self.coordinator.data or {}).get("chargers") or []
         )
 
     async def async_press(self) -> None:
+        """Restart the charger."""
         _LOGGER.warning("Restarting charger box_id=%s", self._box_id)
         await self.coordinator.client.restart_charger(self._box_id)

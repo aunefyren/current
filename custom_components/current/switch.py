@@ -1,3 +1,5 @@
+"""Switches for CURRENT chargers."""
+
 import logging
 from typing import Any
 
@@ -22,15 +24,18 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up the charging, authentication and cable lock switches."""
     coordinator: CurrentCoordinator = hass.data[DOMAIN][entry.entry_id]
     chargers = coordinator.data.get("chargers") or []
     entities: list = []
     for charger in chargers:
-        entities.extend([
-            CurrentChargingSwitch(coordinator, charger),
-            CurrentAuthSwitch(coordinator, charger),
-            CurrentCableLockSwitch(coordinator, charger),
-        ])
+        entities.extend(
+            [
+                CurrentChargingSwitch(coordinator, charger),
+                CurrentAuthSwitch(coordinator, charger),
+                CurrentCableLockSwitch(coordinator, charger),
+            ]
+        )
     async_add_entities(entities)
 
 
@@ -43,11 +48,14 @@ def _device_info(charger: dict) -> DeviceInfo:
 
 
 class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
+    """Starts and stops charging."""
+
     _attr_has_entity_name = True
     _attr_name = "EV Charging"
     _attr_icon = "mdi:ev-station"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
+        """Initialise the switch for one charger."""
         super().__init__(coordinator)
         self._charge_point_id: int = charger["FK_ChargePointID"]
         self._pending_state: bool | None = None
@@ -56,6 +64,7 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
 
     @property
     def available(self) -> bool:
+        """Return whether the charger is still on the account."""
         return super().available and any(
             c["FK_ChargePointID"] == self._charge_point_id
             for c in (self.coordinator.data or {}).get("chargers") or []
@@ -63,24 +72,31 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
 
     def _get_session(self) -> dict | None:
         return next(
-            (s for s in (self.coordinator.data or {}).get("ongoing") or []
-             if s.get("ChargingPointID") == self._charge_point_id),
+            (
+                s
+                for s in (self.coordinator.data or {}).get("ongoing") or []
+                if s.get("ChargingPointID") == self._charge_point_id
+            ),
             None,
         )
 
     @property
     def is_on(self) -> bool:
+        """Return whether charging, or the state just requested."""
         if self._pending_state is not None:
             return self._pending_state
         return self._get_session() is not None
 
     def _handle_coordinator_update(self) -> None:
-        if self._pending_state is not None:
-            if (self._get_session() is not None) == self._pending_state:
-                self._pending_state = None
+        if (
+            self._pending_state is not None
+            and (self._get_session() is not None) == self._pending_state
+        ):
+            self._pending_state = None
         super()._handle_coordinator_update()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        """Start charging."""
         self._pending_state = True
         self.async_write_ha_state()
         await self.coordinator.client.start_charging(self._charge_point_id)
@@ -89,6 +105,7 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
         async_call_later(self.hass, _PENDING_TIMEOUT, self._async_clear_pending)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        """Stop the active session, if there is one."""
         session = self._get_session()
         if not session:
             _LOGGER.warning("No active session to stop")
@@ -112,11 +129,14 @@ class CurrentChargingSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity)
 
 
 class CurrentAuthSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
+    """Turns required authentication on or off."""
+
     _attr_has_entity_name = True
     _attr_name = "Require Authentication"
     _attr_icon = "mdi:shield-key"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
+        """Initialise the switch for one charger."""
         super().__init__(coordinator)
         self._charge_point_id: int = charger["FK_ChargePointID"]
         self._box_id: int = charger["FK_ChargingBoxID"]
@@ -125,34 +145,44 @@ class CurrentAuthSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
 
     def _get_charger(self) -> dict:
         return next(
-            (c for c in (self.coordinator.data or {}).get("chargers") or []
-             if c["FK_ChargePointID"] == self._charge_point_id),
+            (
+                c
+                for c in (self.coordinator.data or {}).get("chargers") or []
+                if c["FK_ChargePointID"] == self._charge_point_id
+            ),
             {},
         )
 
     @property
     def available(self) -> bool:
+        """Return whether the charger is still on the account."""
         return super().available and bool(self._get_charger())
 
     @property
     def is_on(self) -> bool:
+        """Return whether authentication is required."""
         return bool(self._get_charger().get("IsAuthenticationEnabled"))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        """Require authentication."""
         await self.coordinator.client.set_authentication(self._box_id, True)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        """Stop requiring authentication."""
         await self.coordinator.client.set_authentication(self._box_id, False)
         await self.coordinator.async_request_refresh()
 
 
 class CurrentCableLockSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity):
+    """Turns permanent cable locking on or off."""
+
     _attr_has_entity_name = True
     _attr_name = "Cable Lock"
     _attr_icon = "mdi:lock"
 
     def __init__(self, coordinator: CurrentCoordinator, charger: dict) -> None:
+        """Initialise the switch for one charger."""
         super().__init__(coordinator)
         self._charge_point_id: int = charger["FK_ChargePointID"]
         self._attr_unique_id = f"current_{self._charge_point_id}_cable_lock"
@@ -160,23 +190,30 @@ class CurrentCableLockSwitch(CoordinatorEntity[CurrentCoordinator], SwitchEntity
 
     def _get_charger(self) -> dict:
         return next(
-            (c for c in (self.coordinator.data or {}).get("chargers") or []
-             if c["FK_ChargePointID"] == self._charge_point_id),
+            (
+                c
+                for c in (self.coordinator.data or {}).get("chargers") or []
+                if c["FK_ChargePointID"] == self._charge_point_id
+            ),
             {},
         )
 
     @property
     def available(self) -> bool:
+        """Return whether the charger is still on the account."""
         return super().available and bool(self._get_charger())
 
     @property
     def is_on(self) -> bool:
+        """Return whether the cable stays locked."""
         return bool(self._get_charger().get("isPermanentCableLockingEnabled"))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        """Lock the cable permanently."""
         await self.coordinator.client.set_cable_lock(self._charge_point_id, True)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        """Stop locking the cable permanently."""
         await self.coordinator.client.set_cable_lock(self._charge_point_id, False)
         await self.coordinator.async_request_refresh()

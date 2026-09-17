@@ -1,3 +1,5 @@
+"""Client for the CURRENT cloud API."""
+
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -10,14 +12,20 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class AuthError(Exception):
+    """Raised when CURRENT rejects the credentials or tokens."""
+
     pass
 
 
 class CannotConnectError(Exception):
+    """Raised when CURRENT cannot be reached or answers with an error."""
+
     pass
 
 
 class CurrentApiClient:
+    """Talks to the CURRENT API on behalf of one customer."""
+
     def __init__(
         self,
         session: aiohttp.ClientSession,
@@ -27,6 +35,7 @@ class CurrentApiClient:
         user_id: int,
         on_token_refresh: Callable[[str], None] | None = None,
     ) -> None:
+        """Store the session, tokens and account ids."""
         self._session = session
         self._access_token = access_token
         self._refresh_token = refresh_token
@@ -38,6 +47,7 @@ class CurrentApiClient:
     async def login(
         session: aiohttp.ClientSession, email: str, password: str
     ) -> dict[str, Any]:
+        """Log in and return the account data, including tokens and ids."""
         url = f"{API_BASE_URL}/v2/Users/Authenticate"
         body = {
             "appID": APP_ID,
@@ -55,7 +65,12 @@ class CurrentApiClient:
                     raise CannotConnectError(f"Login failed with status {resp.status}")
                 data = await resp.json()
                 unwrapped = data.get("Result", data) if isinstance(data, dict) else data
-                _LOGGER.debug("Login response keys: %s", list(unwrapped.keys()) if isinstance(unwrapped, dict) else type(unwrapped))
+                _LOGGER.debug(
+                    "Login response keys: %s",
+                    list(unwrapped.keys())
+                    if isinstance(unwrapped, dict)
+                    else type(unwrapped),
+                )
                 return unwrapped
         except aiohttp.ClientError as err:
             raise CannotConnectError(f"Connection error: {err}") from err
@@ -70,12 +85,16 @@ class CurrentApiClient:
         }
         refresh_headers = {"Origin": APP_ORIGIN, "X-App-Version": APP_VERSION}
         try:
-            async with self._session.post(url, json=body, headers=refresh_headers) as resp:
+            async with self._session.post(
+                url, json=body, headers=refresh_headers
+            ) as resp:
                 if not resp.ok:
                     raise AuthError("Token refresh failed")
                 data = await resp.json()
                 # Response structure: {"Result": {"datas": "<new_access_token>"}}
-                new_token = data.get("Result", {}).get("datas") or data.get("datas") or data
+                new_token = (
+                    data.get("Result", {}).get("datas") or data.get("datas") or data
+                )
                 if not isinstance(new_token, str):
                     raise AuthError(f"Unexpected refresh response: {data}")
                 self._access_token = new_token
@@ -92,7 +111,9 @@ class CurrentApiClient:
             "X-App-Version": APP_VERSION,
         }
         try:
-            async with self._session.request(method, url, headers=headers, **kwargs) as resp:
+            async with self._session.request(
+                method, url, headers=headers, **kwargs
+            ) as resp:
                 if resp.status in (401, 403):
                     raise AuthError("Unauthorized")
                 if not resp.ok:
@@ -112,9 +133,12 @@ class CurrentApiClient:
             except AuthError as err:
                 # Refresh succeeded but request was still rejected — not an auth
                 # problem (e.g. endpoint returns 403 for non-auth reasons).
-                raise CannotConnectError(f"Request failed after token refresh: {err}") from err
+                raise CannotConnectError(
+                    f"Request failed after token refresh: {err}"
+                ) from err
 
     async def get_chargers(self) -> list[dict]:
+        """Return the charge points on the account."""
         data = await self._request_with_refresh(
             "GET", "ChargePoints/my-points", params={"customerID": self._customer_id}
         )
@@ -122,6 +146,7 @@ class CurrentApiClient:
         return (data.get("Result") or {}).get("datas") or []
 
     async def get_ongoing_session(self) -> list[dict]:
+        """Return the account's active charging sessions."""
         data = await self._request_with_refresh(
             "GET", f"sessions/user/{self._user_id}/active"
         )
@@ -131,6 +156,7 @@ class CurrentApiClient:
         return []
 
     async def start_charging(self, charge_point_id: int) -> dict:
+        """Start charging on a charge point."""
         return await self._request_with_refresh(
             "POST",
             "Commands/RemoteStart",
@@ -142,11 +168,13 @@ class CurrentApiClient:
         )
 
     async def stop_charging(self, box_id: str | int, session_id: str | int) -> dict:
+        """Stop an active session on a charging box."""
         return await self._request_with_refresh(
             "GET", f"Commands/RemoteStop/{box_id}/{session_id}"
         )
 
     async def get_history(self, count: int = 5) -> dict:
+        """Return the most recent charging sessions and account totals."""
         data = await self._request_with_refresh(
             "GET",
             f"ChargingHistory/customers/{self._customer_id}",
@@ -161,24 +189,28 @@ class CurrentApiClient:
         return data.get("Result", data) if isinstance(data, dict) else data
 
     async def set_authentication(self, box_id: int, enabled: bool) -> dict:
+        """Turn required authentication on or off for a charging box."""
         return await self._request_with_refresh(
             "GET", f"Commands/SetDefaultAuthentication/{box_id}/{str(enabled).lower()}"
         )
 
     async def set_cable_lock(self, charge_point_id: int, enabled: bool) -> dict:
+        """Turn permanent cable locking on or off for a charge point."""
         return await self._request_with_refresh(
-            "GET", f"Commands/SetDefaultPermanentCableLocking/{charge_point_id}/{str(enabled).lower()}"
+            "GET",
+            f"Commands/SetDefaultPermanentCableLocking/{charge_point_id}/{str(enabled).lower()}",
         )
 
     async def restart_charger(self, box_id: int) -> dict:
-        return await self._request_with_refresh(
-            "GET", f"Commands/Reset/{box_id}/1"
-        )
+        """Restart a charging box."""
+        return await self._request_with_refresh("GET", f"Commands/Reset/{box_id}/1")
 
     @property
     def access_token(self) -> str:
+        """Return the current access token."""
         return self._access_token
 
     @property
     def refresh_token(self) -> str:
+        """Return the refresh token."""
         return self._refresh_token

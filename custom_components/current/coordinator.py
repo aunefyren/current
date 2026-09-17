@@ -1,3 +1,5 @@
+"""Data update coordinator for CURRENT."""
+
 import logging
 import time
 from datetime import timedelta
@@ -16,7 +18,10 @@ SCAN_INTERVAL_FAST = 5  # seconds — used briefly after start/stop
 
 
 class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Polls chargers, active sessions and history for one account."""
+
     def __init__(self, hass: HomeAssistant, client: CurrentApiClient) -> None:
+        """Initialise the coordinator with the idle poll interval."""
         super().__init__(
             hass,
             _LOGGER,
@@ -27,6 +32,7 @@ class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._fast_poll_until: float = 0
 
     def start_fast_polling(self, duration: int = 120) -> None:
+        """Poll faster for a while, so a start or stop shows up quickly."""
         self._fast_poll_until = time.monotonic() + duration
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -35,7 +41,9 @@ class CurrentCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             chargers = await self.client.get_chargers()
             history = await self.client.get_history()
         except AuthError as err:
-            raise ConfigEntryAuthFailed(f"CURRENT authentication failed: {err}") from err
+            raise ConfigEntryAuthFailed(
+                f"CURRENT authentication failed: {err}"
+            ) from err
         except CannotConnectError as err:
             raise UpdateFailed(f"Error communicating with CURRENT API: {err}") from err
 

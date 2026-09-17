@@ -1,15 +1,22 @@
+"""Config flow for CURRENT EV Charging."""
+
 import logging
 from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.helpers import aiohttp_client
 
 from .api import AuthError, CannotConnectError, CurrentApiClient
-from .const import CONF_ACCESS_TOKEN, CONF_CUSTOMER_ID, CONF_REFRESH_TOKEN, CONF_USER_ID, DOMAIN
+from .const import (
+    CONF_ACCESS_TOKEN,
+    CONF_CUSTOMER_ID,
+    CONF_REFRESH_TOKEN,
+    CONF_USER_ID,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,11 +29,14 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle setting up and re-authenticating a CURRENT account."""
+
     VERSION = 1
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Ask for the account credentials."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -53,7 +63,9 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
                 except KeyError:
                     _LOGGER.error(
                         "Unexpected login response structure. Got keys: %s",
-                        list(login_data.keys()) if isinstance(login_data, dict) else login_data,
+                        list(login_data.keys())
+                        if isinstance(login_data, dict)
+                        else login_data,
                     )
                     errors["base"] = "unknown"
                 else:
@@ -80,11 +92,13 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
+        """Start re-authentication after the stored tokens stop working."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Ask for the password again and store fresh tokens."""
         errors: dict[str, str] = {}
         reauth_entry = self._get_reauth_entry()
 
@@ -111,7 +125,9 @@ class CurrentConfigFlow(ConfigFlow, domain=DOMAIN):
                 except KeyError:
                     _LOGGER.error(
                         "Unexpected login response during reauth. Got keys: %s",
-                        list(login_data.keys()) if isinstance(login_data, dict) else login_data,
+                        list(login_data.keys())
+                        if isinstance(login_data, dict)
+                        else login_data,
                     )
                     errors["base"] = "unknown"
                 else:

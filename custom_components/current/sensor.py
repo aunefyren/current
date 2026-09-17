@@ -1,3 +1,5 @@
+"""Sensors for CURRENT chargers."""
+
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -52,6 +54,8 @@ def _get_history_sessions(data: dict) -> list:
 
 @dataclass(frozen=True, kw_only=True)
 class CurrentSensorEntityDescription(SensorEntityDescription):
+    """Describes a CURRENT sensor and how to read its value."""
+
     value_fn: Callable[[dict[str, Any]], Any]
     unit_fn: Callable[[dict[str, Any]], str | None] | None = None
 
@@ -123,7 +127,9 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
         name="Last Session Cost",
         icon="mdi:cash",
         state_class=SensorStateClass.TOTAL,
-        value_fn=lambda data: (_get_history_sessions(data) or [{}])[0].get("TotalPrice"),
+        value_fn=lambda data: (_get_history_sessions(data) or [{}])[0].get(
+            "TotalPrice"
+        ),
         unit_fn=lambda data: (data.get("chargers") or [{}])[0].get("Currency"),
     ),
     CurrentSensorEntityDescription(
@@ -142,6 +148,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up sensors for each charger."""
     coordinator: CurrentCoordinator = hass.data[DOMAIN][entry.entry_id]
     chargers = coordinator.data.get("chargers") or []
     async_add_entities(
@@ -152,6 +159,8 @@ async def async_setup_entry(
 
 
 class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
+    """A sensor for one charger."""
+
     _attr_has_entity_name = True
     entity_description: CurrentSensorEntityDescription
 
@@ -161,6 +170,7 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
         description: CurrentSensorEntityDescription,
         charger: dict,
     ) -> None:
+        """Initialise the sensor for one charger."""
         super().__init__(coordinator)
         self.entity_description = description
         self._charge_point_id: int = charger["FK_ChargePointID"]
@@ -176,16 +186,17 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
         cp_id = self._charge_point_id
         return {
             "chargers": [
-                c for c in data.get("chargers") or []
-                if c["FK_ChargePointID"] == cp_id
+                c for c in data.get("chargers") or [] if c["FK_ChargePointID"] == cp_id
             ],
             "ongoing": [
-                s for s in data.get("ongoing") or []
+                s
+                for s in data.get("ongoing") or []
                 if s.get("ChargingPointID") == cp_id
             ],
             "history": {
                 "List": [
-                    h for h in (data.get("history") or {}).get("List") or []
+                    h
+                    for h in (data.get("history") or {}).get("List") or []
                     if h.get("ChargePointID") == cp_id
                 ]
             },
@@ -193,6 +204,7 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
+        """Return whether the charger is still on the account."""
         return super().available and any(
             c["FK_ChargePointID"] == self._charge_point_id
             for c in (self.coordinator.data or {}).get("chargers") or []
@@ -200,10 +212,12 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
 
     @property
     def native_unit_of_measurement(self) -> str | None:
+        """Return the unit, which for costs is the charger's currency."""
         if self.entity_description.unit_fn is not None:
             return self.entity_description.unit_fn(self._filtered_data())
         return self.entity_description.native_unit_of_measurement
 
     @property
     def native_value(self) -> Any:
+        """Return the value for this charger."""
         return self.entity_description.value_fn(self._filtered_data())

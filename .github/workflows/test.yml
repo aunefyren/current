@@ -16,10 +16,8 @@ jobs:
         with:
           python-version: "3.13"
       - run: python -m pip install ruff
-      # custom_components is not lint-clean yet (docstrings, formatting). Add it
-      # here once it is.
-      - run: ruff check tests dev
-      - run: ruff format --check tests dev
+      - run: ruff check custom_components tests dev
+      - run: ruff format --check custom_components tests dev
 
   test:
     name: Pytest
