@@ -45,7 +45,11 @@ async def test_idle(
     cost = state(hass, "last_session_cost")
     assert float(cost.state) == 82.18
     assert cost.attributes["unit_of_measurement"] == "NOK"
-    assert float(state(hass, "last_session_energy").state) == 58.702
+    energy = state(hass, "last_session_energy")
+    assert float(energy.state) == 58.702
+    # Totals start over with each session, when the last one ended.
+    for sensor in (cost, energy):
+        assert sensor.attributes["last_reset"] == "2026-09-15T05:29:39.780000+00:00"
 
 
 async def test_charging(

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import pathlib
 from collections.abc import Iterator
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
@@ -45,10 +47,19 @@ from .const import (
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 API_PREFIX = f"{API_BASE_URL}/v2/"
 
+# pytest-homeassistant-custom-component turns SQLAlchemy's statement logging on
+# at INFO, which buries the test results under the recorder's inserts.
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Let every test load this integration."""
+def auto_enable_custom_integrations(recorder_mock, enable_custom_integrations):
+    """Let every test load this integration.
+
+    `recorder_mock` is requested first on purpose: the integration depends on
+    the recorder, and the recorder's database fixture asserts that it is built
+    before `hass` exists.
+    """
     return
 
 
@@ -107,6 +118,8 @@ class CurrentApiMock:
             "datas"
         ]
         self.history: dict[str, Any] = responses["history"]["Result"]
+        # Largest page the endpoint hands out, whatever `number` asks for.
+        self.history_page_limit: int | None = None
 
         # Tokens the server currently accepts.
         self.valid_tokens = {MOCK_ACCESS_TOKEN}
@@ -162,6 +175,38 @@ class CurrentApiMock:
         )
         self.history = {**self.history, "List": [item, *self.history["List"]]}
 
+    def set_history_length(self, count: int) -> None:
+        """Replace the history with `count` sessions, one a day, newest first.
+
+        Each is a copy of the first captured session, moved back a day at a
+        time, with its own id.
+        """
+        template = self.history["List"][0]
+        start = datetime.fromisoformat(template["Session"]["SessionStart"])
+        end = datetime.fromisoformat(template["Session"]["SessionEnd"])
+        items = []
+        for n in range(count):
+            item = copy.deepcopy(template)
+            item["Session"].update(
+                PK_ServiceSessionID=100000 + n,
+                SessionStart=(start - timedelta(days=n)).isoformat(),
+                SessionEnd=(end - timedelta(days=n)).isoformat(),
+            )
+            items.append(item)
+        self.history = {**self.history, "List": items, "TotalOrders": count}
+
+    def history_requests(self) -> list[dict[str, Any]]:
+        """Return the history requests that were made."""
+        return [r for r in self.requests if r["path"].startswith("ChargingHistory/")]
+
+    def history_response(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return one page of history, as `number` and `startIndex` ask."""
+        number = int(params.get("number", 5))
+        if self.history_page_limit is not None:
+            number = min(number, self.history_page_limit)
+        start = int(params.get("startIndex", 0))
+        return {**self.history, "List": self.history["List"][start : start + number]}
+
     def commands(self) -> list[dict[str, Any]]:
         """Return the charger commands that were sent."""
         return [r for r in self.requests if r["path"].startswith("Commands/")]
@@ -206,7 +251,9 @@ class CurrentApiMock:
         if method == "GET" and path == f"sessions/user/{MOCK_USER_ID}/active":
             return FakeResponse(200, {"Result": self.sessions})
         if method == "GET" and path == f"ChargingHistory/customers/{MOCK_CUSTOMER_ID}":
-            return FakeResponse(200, {"Result": self.history})
+            return FakeResponse(
+                200, {"Result": self.history_response(kwargs.get("params") or {})}
+            )
         if path.startswith("Commands/"):
             if self.command_status is not None:
                 return FakeResponse(self.command_status, {})
@@ -290,7 +337,7 @@ async def setup_entry(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """Add the entry to hass and set it up."""
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
 
 def entity_id(

@@ -173,14 +173,17 @@ class CurrentApiClient:
             "GET", f"Commands/RemoteStop/{box_id}/{session_id}"
         )
 
-    async def get_history(self, count: int = 5) -> dict:
-        """Return the most recent charging sessions and account totals."""
+    async def get_history(self, count: int = 5, start_index: int = 0) -> dict:
+        """Return completed charging sessions, newest first, and account totals.
+
+        `start_index` skips that many sessions, for paging further back.
+        """
         data = await self._request_with_refresh(
             "GET",
             f"ChargingHistory/customers/{self._customer_id}",
             params={
                 "number": count,
-                "startIndex": 0,
+                "startIndex": start_index,
                 "fromDateTimestamp": 0,
                 "toDateTimestamp": 0,
                 "calculateTotalPrice": "true",

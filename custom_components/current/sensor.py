@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -26,6 +27,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import CurrentCoordinator
+from .statistics_import import parse_time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +49,19 @@ def _get_session_duration(data: dict) -> int | None:
 
 def _get_history_sessions(data: dict) -> list:
     return (data.get("history") or {}).get("List") or []
+
+
+def _get_last_session_end(data: dict) -> datetime | None:
+    """Return when the last completed session ended.
+
+    The last session sensors are totals that start over with every session, so
+    this is their last_reset. Without it, the recorder would read a smaller
+    session following a bigger one as negative energy.
+    """
+    sessions = _get_history_sessions(data)
+    if not sessions:
+        return None
+    return parse_time((sessions[0].get("Session") or {}).get("SessionEnd"))
 
 
 def _get_live(data: dict) -> dict:
@@ -74,6 +89,7 @@ class CurrentSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
     unit_fn: Callable[[dict[str, Any]], str | None] | None = None
     attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    last_reset_fn: Callable[[dict[str, Any]], datetime | None] | None = None
 
 
 SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
@@ -143,6 +159,7 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
             "TotalPrice"
         ),
         unit_fn=lambda data: (data.get("chargers") or [{}])[0].get("Currency"),
+        last_reset_fn=_get_last_session_end,
     ),
     CurrentSensorEntityDescription(
         key="last_session_energy",
@@ -151,6 +168,7 @@ SENSOR_DESCRIPTIONS: tuple[CurrentSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: (_get_history_sessions(data) or [{}])[0].get("TotalkWH"),
+        last_reset_fn=_get_last_session_end,
     ),
 )
 
@@ -233,6 +251,13 @@ class CurrentSensor(CoordinatorEntity[CurrentCoordinator], SensorEntity):
     def native_value(self) -> Any:
         """Return the value for this charger."""
         return self.entity_description.value_fn(self._filtered_data())
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """Return when a per-session total last started over."""
+        if self.entity_description.last_reset_fn is None:
+            return None
+        return self.entity_description.last_reset_fn(self._filtered_data())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

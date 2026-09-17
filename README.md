@@ -1,7 +1,6 @@
 # CURRENT EV Charging
 
 ![GitHub Release](https://img.shields.io/github/v/release/aunefyren/current?style=for-the-badge)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/aunefyren/current/total?style=for-the-badge)
 ![GitHub issues](https://img.shields.io/github/issues/aunefyren/current?style=for-the-badge)
 ![GitHub Repo stars](https://img.shields.io/github/stars/aunefyren/current?style=for-the-badge)
 ![GitHub forks](https://img.shields.io/github/forks/aunefyren/current?style=for-the-badge)
@@ -25,6 +24,7 @@ Must be added as a custom repository.
 - Live session monitoring (power, current, energy, charging duration)
 - Charger status: `Available`, `Charging`, `Standby` (car full/paused), `Unavailable`
 - Last session summary (energy and cost in account currency)
+- Full charging history in the Energy dashboard, with costs
 - Charger controls: require authentication, permanent cable lock, restart
 - Multiple chargers supported — each appears as a separate device
 
@@ -53,6 +53,25 @@ Each charger appears as its own device. The following entities are created per c
 | Require Authentication | Switch | Toggle RFID/app authentication requirement |
 | Cable Lock | Switch | Toggle permanent cable locking |
 | Restart Charger | Button | Send a reset command to the charger |
+
+<br>
+
+## Energy dashboard
+
+The integration reads your whole charging history from CURRENT and writes it to Home Assistant's long-term statistics. Every charger gets two statistics:
+
+| Statistic | Unit |
+|---|---|
+| `current:charger_<id>_energy` | kWh |
+| `current:charger_<id>_cost` | Account currency |
+
+This includes sessions from before the integration was installed and sessions that finished while Home Assistant was down. The history is read when Home Assistant starts and again whenever a session finishes or CURRENT revises one.
+
+To see the charger's usage in the Energy dashboard, add the energy statistic under **Settings → Dashboards → Energy → Individual devices**. Both statistics can also be shown with a **Statistics graph** card, for example charging costs per month.
+
+- CURRENT only reports a total for each session. Its energy and cost are spread evenly from when the car was plugged in until it was unplugged, so hourly values are an estimate, and so is how a session that runs past midnight is split between the days. Each session's total is exact.
+- A session appears in the statistics once it has finished.
+- Don't also add the **Session Energy** sensor to the Energy dashboard, or every charge is counted twice.
 
 <br>
 
